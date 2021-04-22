@@ -1,146 +1,228 @@
-use std::collections::VecDeque;
 use std::io;
-use std::sync::{Arc, Mutex};
 
-use tokio::io::Interest;
+use structopt::StructOpt;
+use tokio::io::copy;
 use tokio::net::{TcpListener, TcpStream};
 
-async fn process_conn(local: TcpStream) {
-    let wb1 = Arc::new(Mutex::new(VecDeque::<u8>::new()));
-    let wb2 = Arc::clone(&wb1);
-    let rb1 = Arc::new(Mutex::new(VecDeque::<u8>::new()));
-    let rb2 = Arc::clone(&rb1);
+async fn process_conn(local: TcpStream, remote: TcpStream) {
+    let (mut local_reader, mut local_writer) = local.into_split();
+    let (mut remote_reader, mut remote_writer) = remote.into_split();
 
-    let remote = TcpStream::connect("127.0.0.1:1234").await.unwrap();
+    let mut tasks = Vec::new();
 
-    tokio::spawn(async move {
-        loop {
-            let ready = local.ready(Interest::READABLE | Interest::WRITABLE).await.unwrap();
-            // println!("local is ready!");
-
-            if ready.is_readable() {
-                // println!("local is readable");
-
-                let mut buf = [0; 1024];
-                match local.try_read(&mut buf) {
-                    Ok(0) => {
-                        println!("local stream's read half is closed!");
-                        return;
-                    }
-                    Ok(n) => {
-                        println!("read from local: {:?}", &buf[..n]);
-                        let mut queue = wb1.lock().unwrap();
-                        queue.extend(&buf[..n]);
-                    }
-                    Err(ref e)  if e.kind() == io::ErrorKind::WouldBlock => {
-                        continue;
-                    }
-                    Err(e) => {
-                        println!("{:?}", e.to_string());
-                        return;
-                    }
-                }
+    let write_task = tokio::spawn(async move {
+        match copy(&mut local_reader, &mut remote_writer).await {
+            Ok(n) => {
+                println!("write {:?} bytes to remote!", n);
+                return;
             }
+            Err(e) => {
+                println!("write to remote error: {:?}", e.to_string());
+                return;
+            }
+        };
+    });
+    tasks.push(write_task);
 
-            if ready.is_writable() {
-                // println!("local is writable");
-
-                let mut queue = rb2.lock().unwrap();
-                if queue.len() == 0 {
-                    continue;
-                }
-
-                let buf = queue.make_contiguous();
-                println!("begin to write to local: {:?}", buf);
-
-                match local.try_write(buf) {
-                    Ok(n) => {
-                        if n == buf.len() {
-                            *queue = VecDeque::<u8>::new();
-                            continue;
-                        }
-                        *queue = VecDeque::from(buf[n..].to_vec());
-                    }
-                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        continue;
-                    }
-                    Err(e) => {
-                        println!("{:?}", e.to_string());
-                        return;
-                    }
-                }
+    let read_task = tokio::spawn(async move {
+        match copy(&mut remote_reader, &mut local_writer).await {
+            Ok(n) => {
+                println!("read {:?} bytes from remote!", n);
+                return;
+            }
+            Err(e) => {
+                println!("read from remote error: {:?}", e.to_string());
+                return;
             }
         }
     });
+    tasks.push(read_task);
 
-    tokio::spawn(async move {
-        loop {
-            let ready = remote.ready(Interest::READABLE | Interest::WRITABLE).await.unwrap();
-            // println!("remote is ready!");
+    for task in tasks {
+        task.await.unwrap();
+    }
 
-            if ready.is_readable() {
-                // println!("remote is readable");
+    // Bellow codes will cause a high cpu usage!!!
+    //
+    // let wb1 = Arc::new(Mutex::new(Vec::<u8>::new()));
+    // let wb2 = Arc::clone(&wb1);
+    // let rb1 = Arc::new(Mutex::new(Vec::<u8>::new()));
+    // let rb2 = Arc::clone(&rb1);
+    //
+    // let mut tasks = Vec::new();
+    //
+    // let local_task = tokio::spawn(async move {
+    //     loop {
+    //         let ready = local.ready(Interest::READABLE | Interest::WRITABLE).await.unwrap();
+    //
+    //         if ready.is_readable() {
+    //             debug!("local is readable");
+    //
+    //             let mut buf = [0; 1024];
+    //             match local.try_read(&mut buf) {
+    //                 Ok(0) => {
+    //                     info!("local stream's read half is closed!");
+    //                     return;
+    //                 }
+    //                 Ok(n) => {
+    //                     debug!("read from local: {:?}", &buf[..n]);
+    //                     let mut buf_ = wb1.lock().unwrap();
+    //                     buf_.extend(&buf[..n]);
+    //                 }
+    //                 Err(ref e)  if e.kind() == io::ErrorKind::WouldBlock => {
+    //                     continue;
+    //                 }
+    //                 Err(e) => {
+    //                     println!("{:?}", e.to_string());
+    //                     return;
+    //                 }
+    //             }
+    //         }
+    //
+    //         if ready.is_writable() {
+    //             debug!("local is writable");
+    //
+    //             let mut buf = rb2.lock().unwrap();
+    //             if buf.len() == 0 {
+    //                 continue;
+    //             }
+    //
+    //             debug!("begin to write to local: {:?}", buf);
+    //
+    //             match local.try_write(&buf) {
+    //                 Ok(n) => {
+    //                     if n == buf.len() {
+    //                         *buf = Vec::<u8>::new();
+    //                         continue;
+    //                     }
+    //                     *buf = Vec::from(&buf[n..]);
+    //                 }
+    //                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+    //                     continue;
+    //                 }
+    //                 Err(e) => {
+    //                     error!("{:?}", e.to_string());
+    //                     return;
+    //                 }
+    //             }
+    //         }
+    //     }
+    // });
+    // tasks.push(local_task);
+    //
+    // let remote_task = tokio::spawn(async move {
+    //     let remote = TcpStream::connect(
+    //         format!("{}:{}", remote_ip, remote_port)
+    //     ).await.unwrap();
+    //
+    //     loop {
+    //         let ready = remote.ready(Interest::READABLE | Interest::WRITABLE).await.unwrap();
+    //
+    //         if ready.is_readable() {
+    //             debug!("remote is readable");
+    //
+    //             let mut buf = [0; 1024];
+    //             match remote.try_read(&mut buf) {
+    //                 Ok(0) => {
+    //                     info!("remote stream's read half is closed!");
+    //                     return;
+    //                 }
+    //                 Ok(n) => {
+    //                     debug!("read from remote: {:?}", &buf[..n]);
+    //                     let mut buf_ = rb1.lock().unwrap();
+    //                     buf_.extend(&buf[..n]);
+    //                 }
+    //                 Err(ref e)  if e.kind() == io::ErrorKind::WouldBlock => {
+    //                     continue;
+    //                 }
+    //                 Err(e) => {
+    //                     error!("{:?}", e.to_string());
+    //                     return;
+    //                 }
+    //             }
+    //         }
+    //
+    //         if ready.is_writable() {
+    //             debug!("remote is writable");
+    //
+    //             let mut buf = wb2.lock().unwrap();
+    //             if buf.len() == 0 {
+    //                 continue;
+    //             }
+    //
+    //             debug!("begin to write to remote: {:?}", buf);
+    //
+    //             match remote.try_write(&buf) {
+    //                 Ok(n) => {
+    //                     if n == buf.len() {
+    //                         *buf = Vec::<u8>::new();
+    //                         continue;
+    //                     }
+    //                     *buf = Vec::from(&buf[n..]);
+    //                 }
+    //                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+    //                     continue;
+    //                 }
+    //                 Err(e) => {
+    //                     error!("{:?}", e.to_string());
+    //                     return;
+    //                 }
+    //             }
+    //         }
+    //     }
+    // });
+    // tasks.push(remote_task);
+    //
+    // for task in tasks {
+    //     task.await.unwrap();
+    // }
+}
 
-                let mut buf = [0; 1024];
-                match remote.try_read(&mut buf) {
-                    Ok(0) => {
-                        println!("remote stream's read half is closed!");
-                        return;
-                    }
-                    Ok(n) => {
-                        println!("read from remote: {:?}", &buf[..n]);
-                        let mut queue = rb1.lock().unwrap();
-                        queue.extend(&buf[..n]);
-                    }
-                    Err(ref e)  if e.kind() == io::ErrorKind::WouldBlock => {
-                        continue;
-                    }
-                    Err(e) => {
-                        println!("{:?}", e.to_string());
-                        return;
-                    }
-                }
-            }
+/// A simple tcp forwarding tool
+#[derive(StructOpt, Debug)]
+#[structopt(name = "tcpforward")]
+struct Options {
+    /// local ip
+    #[structopt(long)]
+    local_ip: String,
 
-            if ready.is_writable() {
-                // println!("remote is writable");
+    /// local port
+    #[structopt(long)]
+    local_port: u16,
 
-                let mut queue = wb2.lock().unwrap();
-                if queue.len() == 0 {
-                    continue;
-                }
+    /// remote ip
+    #[structopt(long)]
+    remote_ip: String,
 
-                let buf = queue.make_contiguous();
-                println!("begin to write to remote: {:?}", buf);
-
-                match remote.try_write(buf) {
-                    Ok(n) => {
-                        if n == buf.len() {
-                            *queue = VecDeque::<u8>::new();
-                            continue;
-                        }
-                        *queue = VecDeque::from(buf[n..].to_vec());
-                    }
-                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        continue;
-                    }
-                    Err(e) => {
-                        println!("{:?}", e.to_string());
-                        return;
-                    }
-                }
-            }
-        }
-    });
+    /// remote port
+    #[structopt(long)]
+    remote_port: u16,
 }
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    let listener = TcpListener::bind("127.0.0.1:12345").await?;
+    println!("service is starting ...");
+
+    let options: Options = Options::from_args();
+    let listener = TcpListener::bind(
+        format!("{}:{}", options.local_ip, options.local_port)
+    ).await?;
 
     loop {
-        let (socket, addr) = listener.accept().await?;
-        println!("a new connection {:?} is coming!", addr);
-        process_conn(socket).await;
+        let (local, peer_addr) = listener.accept().await?;
+        println!("a new connection {:?} is coming!", peer_addr);
+
+        let remote = match TcpStream::connect(
+            format!("{}:{}", options.remote_ip, options.remote_port)
+        ).await {
+            Ok(s) => s,
+            Err(e) => {
+                println!("connect to remote error: {:?}", e.to_string());
+                continue;
+            }
+        };
+        tokio::spawn(async move {
+            process_conn(local, remote).await;
+        });
     }
 }
