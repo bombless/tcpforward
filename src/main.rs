@@ -207,9 +207,9 @@ struct Options {
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
+    let options: Options = Options::from_args();
     println!("service is starting ...");
 
-    let options: Options = Options::from_args();
     let listener = TcpListener::bind(
         format!("{}:{}", options.local_ip, options.local_port)
     ).await?;
