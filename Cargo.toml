@@ -3,6 +3,12 @@ name = "tcpforward"
 version = "0.1.0"
 authors = ["yuchunzhou <chunzhou.yu@qq.com>"]
 edition = "2018"
+keywords = ["network", "tcp", "cli"]
+categories = ["network-programming", "command-line-utilities"]
+license = "Apache-2.0"
+repository = "https://github.com/yuchunzhou/tcpforward"
+homepage = "https://github.com/yuchunzhou/tcpforward"
+description = "A simple tcp forwarding tool"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
