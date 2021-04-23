@@ -1,45 +1,51 @@
+use std::collections::HashMap;
 use std::io;
 
 use structopt::StructOpt;
 use tokio::io::copy;
 use tokio::net::{TcpListener, TcpStream};
+use tokio::task::JoinHandle;
+
+#[derive(Eq, PartialEq, Hash)]
+enum TaskType {
+    WriteTask,
+    ReadTask,
+}
 
 async fn process_conn(local: TcpStream, remote: TcpStream) {
     let (mut local_reader, mut local_writer) = local.into_split();
     let (mut remote_reader, mut remote_writer) = remote.into_split();
 
-    let mut tasks = Vec::new();
+    let mut tasks_map: HashMap<TaskType, JoinHandle<_>> = HashMap::new();
 
     let write_task = tokio::spawn(async move {
-        match copy(&mut local_reader, &mut remote_writer).await {
-            Ok(n) => {
-                println!("write {:?} bytes to remote!", n);
-                return;
-            }
-            Err(e) => {
-                println!("write to remote error: {:?}", e.to_string());
-                return;
-            }
-        };
+        copy(&mut local_reader, &mut remote_writer).await
     });
-    tasks.push(write_task);
+    tasks_map.insert(TaskType::WriteTask, write_task);
 
     let read_task = tokio::spawn(async move {
-        match copy(&mut remote_reader, &mut local_writer).await {
+        copy(&mut remote_reader, &mut local_writer).await
+    });
+    tasks_map.insert(TaskType::ReadTask, read_task);
+
+    for (task_type, task) in tasks_map.iter_mut() {
+        let result = task.await.unwrap();
+        match result {
             Ok(n) => {
-                println!("read {:?} bytes from remote!", n);
-                return;
+                match task_type {
+                    TaskType::WriteTask => println!("write {:?} bytes to remote!", n),
+                    TaskType::ReadTask => println!("read {:?} bytes from remote!", n),
+                }
             }
             Err(e) => {
-                println!("read from remote error: {:?}", e.to_string());
-                return;
+                println!("something went error: {:?}", e.to_string());
+                match task_type {
+                    TaskType::WriteTask => tasks_map.get(&TaskType::ReadTask).unwrap().abort(),
+                    TaskType::ReadTask => tasks_map.get(&TaskType::WriteTask).unwrap().abort(),
+                }
+                break;
             }
         }
-    });
-    tasks.push(read_task);
-
-    for task in tasks {
-        task.await.unwrap();
     }
 
     // Bellow codes will cause a high cpu usage!!!
