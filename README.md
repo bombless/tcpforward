@@ -4,7 +4,7 @@ A tcp forwarding tool
 ### How to use
 ```shell
 $ tcpforward -h
-tcpforward 0.1.0
+tcpforward 0.1.1
 A simple tcp forwarding tool
 
 USAGE:
