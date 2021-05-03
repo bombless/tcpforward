@@ -1,7 +1,7 @@
 # tcpforward
 A tcp forwarding tool
 
-### How to use it?
+### How to use
 ```shell
 $ tcpforward -h
 tcpforward 0.1.0
