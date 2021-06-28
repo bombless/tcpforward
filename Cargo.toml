@@ -1,11 +1,11 @@
 [package]
 name = "tcpforward"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["yuchunzhou <chunzhou.yu@qq.com>"]
 edition = "2018"
 keywords = ["network", "tcp", "cli"]
 categories = ["network-programming", "command-line-utilities"]
-license = "Apache-2.0"
+license = "GPL-2.0"
 repository = "https://github.com/yuchunzhou/tcpforward"
 homepage = "https://github.com/yuchunzhou/tcpforward"
 description = "A simple tcp forwarding tool"
