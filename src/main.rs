@@ -2,11 +2,8 @@ use std::collections::HashMap;
 use std::io;
 
 use structopt::StructOpt;
-use tokio::io::copy;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinHandle;
-use kmp::kmp_find;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[derive(Eq, PartialEq, Hash)]
 enum TaskType {
@@ -14,16 +11,7 @@ enum TaskType {
     ReadTask,
 }
 
-fn replace(from: &[u8], to: &[u8], source: &[u8]) -> Vec<u8> {
-    let search: Option<usize> = kmp_find(from, source);
-    if let Some(idx) = search {
-        let mut new_vec = Vec::from(&source[0 .. idx]);
-        new_vec.extend(to);
-        new_vec.extend(&source[idx + from.len() .. ]);
-        return new_vec;
-    }
-    return Vec::from(source);
-}
+mod copy;
 
 async fn process_conn(local: TcpStream, remote: TcpStream) {
     let (mut local_reader, mut local_writer) = local.into_split();
@@ -32,12 +20,13 @@ async fn process_conn(local: TcpStream, remote: TcpStream) {
     let mut tasks_map: HashMap<TaskType, JoinHandle<_>> = HashMap::new();
 
     let write_task = tokio::spawn(async move {
-        copy(&mut local_reader, &mut remote_writer).await
+        tokio::io::copy(&mut local_reader, &mut remote_writer).await
     });
     tasks_map.insert(TaskType::WriteTask, write_task);
 
     let read_task = tokio::spawn(async move {
-        // copy(&mut remote_reader, &mut local_writer).await
+        copy::copy(&mut remote_reader, &mut local_writer).await
+        /*
         let mut buffer = Vec::new();
         remote_reader.read_to_end(&mut buffer).await.unwrap();
         let replaces: [[&'static [u8]; 2]; 2] = [
@@ -51,7 +40,7 @@ async fn process_conn(local: TcpStream, remote: TcpStream) {
             diff += to.len() - from.len();
         }
         value = replace(b"CONTENT-LENGTH: 6236", format!("CONTENT-LENGTH: {}", diff + 6236).as_bytes(), &value[..]);
-        local_writer.write_all(&value[..]).await.map(|_| value.len() as u64)
+        local_writer.write_all(&value[..]).await.map(|_| value.len() as u64)*/
     });
     tasks_map.insert(TaskType::ReadTask, read_task);
 
