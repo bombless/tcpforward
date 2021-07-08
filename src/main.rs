@@ -32,26 +32,26 @@ async fn process_conn(local: TcpStream, remote: TcpStream) {
     let mut tasks_map: HashMap<TaskType, JoinHandle<_>> = HashMap::new();
 
     let write_task = tokio::spawn(async move {
-        // copy(&mut local_reader, &mut remote_writer).await;
-        let mut buffer: [u8; 256 * 256] = [0; 256 * 256];
-        local_reader.read(&mut buffer).await.unwrap();
+        copy(&mut local_reader, &mut remote_writer).await
+    });
+    tasks_map.insert(TaskType::WriteTask, write_task);
+
+    let read_task = tokio::spawn(async move {
+        // copy(&mut remote_reader, &mut local_writer).await
+        let mut buffer = Vec::new();
+        remote_reader.read_to_end(&mut buffer).await.unwrap();
         let replaces: [[&'static [u8]; 2]; 2] = [
             [b"this._beforeLogin()", b"this._beforeLogin();this._onLogin()"],
             [b"s=o.getValue(),r=n.getValue()",b"s='admin',r='admin'"],
         ];
-        let mut value = Vec::from(&buffer[..]);
+        let mut value = buffer;
         let mut diff = 0;
         for [from, to] in replaces {
             value = replace(from, to, &value[..]);
             diff += to.len() - from.len();
         }
         value = replace(b"CONTENT-LENGTH: 6236", format!("CONTENT-LENGTH: {}", diff + 6236).as_bytes(), &value[..]);
-        remote_writer.write_all(&value[..]).await.map(|_| 0)
-    });
-    tasks_map.insert(TaskType::WriteTask, write_task);
-
-    let read_task = tokio::spawn(async move {
-        copy(&mut remote_reader, &mut local_writer).await
+        local_writer.write_all(&value[..]).await.map(|_| value.len() as u64)
     });
     tasks_map.insert(TaskType::ReadTask, read_task);
 
