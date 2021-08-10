@@ -23,7 +23,7 @@ pub(super) struct CopyBuffer {
     cap: usize,
     amt: u64,
     buf: Vec<u8>,
-    password_segment: String,
+    password_segment: Option<String>,
 }
 
 
@@ -65,7 +65,7 @@ fn modify_buffer(buffer: &mut Vec<u8>, length: usize, password_segment: &str) ->
 }
 
 impl CopyBuffer {
-    pub(super) fn new(password: String) -> Self {
+    pub(super) fn new(password: Option<&str>) -> Self {
         Self {
             read_done: false,
             pos: 0,
@@ -73,7 +73,7 @@ impl CopyBuffer {
             amt: 0,
             // buf: vec![0; 65536].into_boxed_slice(),
             buf: vec![0; 65536],
-            password_segment: format!("s='admin',r='{}'", password),
+            password_segment: password.map(|x| format!("s='admin',r='{}'", x)),
         }
     }
 
@@ -99,7 +99,9 @@ impl CopyBuffer {
                     self.read_done = true;
                 } else {
                     self.pos = 0;
-                    self.cap = (modify_buffer(&mut self.buf, n, &self.password_segment) + n as isize) as usize;
+                    if let Some(password_segment) = &self.password_segment {
+                        self.cap = (modify_buffer(&mut self.buf, n, password_segment) + n as isize) as usize;
+                    }
                 }
             }
 
@@ -147,7 +149,7 @@ where
     Copy {
         reader,
         writer,
-        buf: CopyBuffer::new(String::from(&*password))
+        buf: CopyBuffer::new(Some(&password))
     }.await
 }
 
