@@ -46,6 +46,8 @@ fn modify_buffer(buffer: &mut Vec<u8>, length: usize) -> isize {
 
     let old_length = buffer.len();
 
+    let old_buffer = buffer.clone();
+
     for [from, to] in replaces {
         replace(from, to, buffer, length);
     }
@@ -54,7 +56,7 @@ fn modify_buffer(buffer: &mut Vec<u8>, length: usize) -> isize {
 
     if new_length != old_length {
         replace(b"CONTENT-LENGTH: 6236", format!("CONTENT-LENGTH: {}", 6236 + new_length - old_length).as_bytes(), buffer, length + new_length - old_length);
-        println!("come on {} {}", std::str::from_utf8(buffer).unwrap(), std::str::from_utf8(buffer).unwrap());
+        println!("come on {} {}", std::str::from_utf8(&old_buffer).unwrap(), std::str::from_utf8(buffer).unwrap());
     }
 
     return new_length as isize - old_length as isize;
