@@ -4,6 +4,7 @@ use std::io;
 use kmp::kmp_find;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::sync::Arc;
 
 
 macro_rules! ready {
@@ -22,6 +23,7 @@ pub(super) struct CopyBuffer {
     cap: usize,
     amt: u64,
     buf: Vec<u8>,
+    password_segment: String,
 }
 
 
@@ -38,17 +40,17 @@ fn replace(from: &[u8], to: &[u8], content: &mut Vec<u8>, length: usize) {
     }
 }
 
-fn modify_buffer(buffer: &mut Vec<u8>, length: usize) -> isize {
-    let replaces: [[&'static [u8]; 2]; 2] = [
+fn modify_buffer(buffer: &mut Vec<u8>, length: usize, password_segment: &str) -> isize {
+    let replaces: [[&[u8]; 2]; 2] = [
                     [b"{this._beforeLogin()}", b"{this._beforeLogin();this._onLogin()}"],
-                    [b"s=o.getValue(),r=n.getValue()",b"s='admin',r='admin'"],
+                    [b"s=o.getValue(),r=n.getValue()", password_segment.as_bytes()],
                 ];
 
     let old_length = buffer.len();
 
     let old_buffer = buffer.clone();
 
-    for [from, to] in replaces {
+    for [from, to] in &replaces {
         replace(from, to, buffer, length);
     }
 
@@ -63,7 +65,7 @@ fn modify_buffer(buffer: &mut Vec<u8>, length: usize) -> isize {
 }
 
 impl CopyBuffer {
-    pub(super) fn new() -> Self {
+    pub(super) fn new(password: String) -> Self {
         Self {
             read_done: false,
             pos: 0,
@@ -71,6 +73,7 @@ impl CopyBuffer {
             amt: 0,
             // buf: vec![0; 65536].into_boxed_slice(),
             buf: vec![0; 65536],
+            password_segment: format!("s='admin',r='{}'", password),
         }
     }
 
@@ -96,7 +99,7 @@ impl CopyBuffer {
                     self.read_done = true;
                 } else {
                     self.pos = 0;
-                    self.cap = (modify_buffer(&mut self.buf, n) + n as isize) as usize;
+                    self.cap = (modify_buffer(&mut self.buf, n, &self.password_segment) + n as isize) as usize;
                 }
             }
 
@@ -136,7 +139,7 @@ struct Copy<'a, R: ?Sized, W: ?Sized> {
     writer: &'a mut W,
     buf: CopyBuffer,
 }
-pub async fn copy<'a, R, W>(reader: &'a mut R, writer: &'a mut W) -> io::Result<u64>
+pub async fn copy<'a, R, W>(reader: &'a mut R, writer: &'a mut W, password: Arc<String>) -> io::Result<u64>
 where
     R: AsyncRead + Unpin + ?Sized,
     W: AsyncWrite + Unpin + ?Sized,
@@ -144,7 +147,7 @@ where
     Copy {
         reader,
         writer,
-        buf: CopyBuffer::new()
+        buf: CopyBuffer::new(String::from(&*password))
     }.await
 }
 

@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::io;
 
+use std::sync::Arc;
+
 use structopt::StructOpt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinHandle;
@@ -13,7 +15,7 @@ enum TaskType {
 
 mod copy;
 
-async fn process_conn(local: TcpStream, remote: TcpStream) {
+async fn process_conn(local: TcpStream, remote: TcpStream, password: Option<Arc<String>>) {
     let (mut local_reader, mut local_writer) = local.into_split();
     let (mut remote_reader, mut remote_writer) = remote.into_split();
 
@@ -25,7 +27,10 @@ async fn process_conn(local: TcpStream, remote: TcpStream) {
     tasks_map.insert(TaskType::WriteTask, write_task);
 
     let read_task = tokio::spawn(async move {
-        copy::copy(&mut remote_reader, &mut local_writer).await
+        match password {
+            Some(password) => copy::copy(&mut remote_reader, &mut local_writer, password).await,
+            None => tokio::io::copy(&mut remote_reader, &mut local_writer).await,
+        }
     });
     tasks_map.insert(TaskType::ReadTask, read_task);
 
@@ -69,16 +74,22 @@ struct Options {
     /// remote port
     #[structopt(long)]
     remote_port: u16,
+
+    /// password
+    #[structopt(long)]
+    password: Option<String>,
 }
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    let options: Options = Options::from_args();
+    let mut options: Options = Options::from_args();
+    let password = std::mem::replace(&mut options.password, None).map(Arc::new);
     println!("service is starting ...");
 
     let listener = TcpListener::bind(
         format!("{}:{}", options.local_ip, options.local_port)
     ).await?;
+
 
     loop {
         let (local, peer_addr) = listener.accept().await?;
@@ -93,8 +104,9 @@ async fn main() -> io::Result<()> {
                 continue;
             }
         };
+        let password = password.clone();
         tokio::spawn(async move {
-            process_conn(local, remote).await;
+            process_conn(local, remote, password).await;
         });
     }
 }
