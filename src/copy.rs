@@ -66,6 +66,14 @@ fn modify_buffer(buffer: &mut Vec<u8>, length: usize, password_segment: &str) ->
     return new_length as isize - old_length as isize;
 }
 
+fn log(data: &[u8], addr: &SocketAddr) {
+    eprint!("{:?}({}):", addr, data.len());
+    for b in data {
+        eprint!("{:02x}", b)
+    }
+    eprintln!()
+}
+
 impl CopyBuffer {
     pub(super) fn new(addr: SocketAddr, password: Option<&str>) -> Self {
         Self {
@@ -104,6 +112,8 @@ impl CopyBuffer {
                     self.pos = 0;
                     if let Some(password_segment) = &self.password_segment {
                         self.cap = (modify_buffer(&mut self.buf, n, password_segment) + n as isize) as usize;
+                    } else {
+                        log(&self.buf[..n], &self.peer_addr)
                     }
                 }
             }
