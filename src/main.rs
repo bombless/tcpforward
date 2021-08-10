@@ -22,15 +22,22 @@ async fn process_conn(local: TcpStream, remote: TcpStream, addr: SocketAddr, pas
 
     let mut tasks_map: HashMap<TaskType, JoinHandle<_>> = HashMap::new();
 
+    let login_mode = password.is_some();
+
     let write_task = tokio::spawn(async move {
-        tokio::io::copy(&mut local_reader, &mut remote_writer).await
+        if !login_mode {
+            copy::copy(&mut local_reader, &mut remote_writer, addr, None).await
+        } else {
+            tokio::io::copy(&mut local_reader, &mut remote_writer).await
+        }        
     });
     tasks_map.insert(TaskType::WriteTask, write_task);
 
     let read_task = tokio::spawn(async move {
-        match password {
-            Some(password) => copy::copy(&mut remote_reader, &mut local_writer, addr, password).await,
-            None => tokio::io::copy(&mut remote_reader, &mut local_writer).await,
+        if login_mode {
+            copy::copy(&mut remote_reader, &mut local_writer, addr, password).await
+        } else {
+            tokio::io::copy(&mut remote_reader, &mut local_writer).await
         }
     });
     tasks_map.insert(TaskType::ReadTask, read_task);
@@ -40,8 +47,8 @@ async fn process_conn(local: TcpStream, remote: TcpStream, addr: SocketAddr, pas
         match result {
             Ok(n) => {
                 match task_type {
-                    TaskType::WriteTask => println!("write {:?} bytes to remote!", n),
-                    TaskType::ReadTask => println!("read {:?} bytes from remote!", n),
+                    TaskType::WriteTask => println!("write {:?} bytes to remote {:?}!", n, addr),
+                    TaskType::ReadTask => println!("read {:?} bytes from remote {:?}!", n, addr),
                 }
             }
             Err(e) => {

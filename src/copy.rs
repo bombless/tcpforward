@@ -154,7 +154,7 @@ struct Copy<'a, R: ?Sized, W: ?Sized> {
     writer: &'a mut W,
     buf: CopyBuffer,
 }
-pub async fn copy<'a, R, W>(reader: &'a mut R, writer: &'a mut W, addr: SocketAddr, password: Arc<String>) -> io::Result<u64>
+pub async fn copy<'a, R, W>(reader: &'a mut R, writer: &'a mut W, addr: SocketAddr, password: Option<Arc<String>>) -> io::Result<u64>
 where
     R: AsyncRead + Unpin + ?Sized,
     W: AsyncWrite + Unpin + ?Sized,
@@ -162,7 +162,7 @@ where
     Copy {
         reader,
         writer,
-        buf: CopyBuffer::new(addr, Some(&password)),
+        buf: CopyBuffer::new(addr, match password { Some(ref x) => Some(&x), None => None }),
     }.await
 }
 
