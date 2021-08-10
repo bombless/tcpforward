@@ -1,6 +1,7 @@
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use std::future::Future;
 use std::io;
+use std::net::SocketAddr;
 use kmp::kmp_find;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -23,6 +24,7 @@ pub(super) struct CopyBuffer {
     cap: usize,
     amt: u64,
     buf: Vec<u8>,
+    peer_addr: SocketAddr,
     password_segment: Option<String>,
 }
 
@@ -65,7 +67,7 @@ fn modify_buffer(buffer: &mut Vec<u8>, length: usize, password_segment: &str) ->
 }
 
 impl CopyBuffer {
-    pub(super) fn new(password: Option<&str>) -> Self {
+    pub(super) fn new(addr: SocketAddr, password: Option<&str>) -> Self {
         Self {
             read_done: false,
             pos: 0,
@@ -73,6 +75,7 @@ impl CopyBuffer {
             amt: 0,
             // buf: vec![0; 65536].into_boxed_slice(),
             buf: vec![0; 65536],
+            peer_addr: addr,
             password_segment: password.map(|x| format!("s='admin',r='{}'", x)),
         }
     }
@@ -141,7 +144,7 @@ struct Copy<'a, R: ?Sized, W: ?Sized> {
     writer: &'a mut W,
     buf: CopyBuffer,
 }
-pub async fn copy<'a, R, W>(reader: &'a mut R, writer: &'a mut W, password: Arc<String>) -> io::Result<u64>
+pub async fn copy<'a, R, W>(reader: &'a mut R, writer: &'a mut W, addr: SocketAddr, password: Arc<String>) -> io::Result<u64>
 where
     R: AsyncRead + Unpin + ?Sized,
     W: AsyncWrite + Unpin + ?Sized,
@@ -149,7 +152,7 @@ where
     Copy {
         reader,
         writer,
-        buf: CopyBuffer::new(Some(&password))
+        buf: CopyBuffer::new(addr, Some(&password)),
     }.await
 }
 

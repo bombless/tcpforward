@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::io;
 
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use structopt::StructOpt;
@@ -15,7 +16,7 @@ enum TaskType {
 
 mod copy;
 
-async fn process_conn(local: TcpStream, remote: TcpStream, password: Option<Arc<String>>) {
+async fn process_conn(local: TcpStream, remote: TcpStream, addr: SocketAddr, password: Option<Arc<String>>) {
     let (mut local_reader, mut local_writer) = local.into_split();
     let (mut remote_reader, mut remote_writer) = remote.into_split();
 
@@ -28,7 +29,7 @@ async fn process_conn(local: TcpStream, remote: TcpStream, password: Option<Arc<
 
     let read_task = tokio::spawn(async move {
         match password {
-            Some(password) => copy::copy(&mut remote_reader, &mut local_writer, password).await,
+            Some(password) => copy::copy(&mut remote_reader, &mut local_writer, addr, password).await,
             None => tokio::io::copy(&mut remote_reader, &mut local_writer).await,
         }
     });
@@ -106,7 +107,7 @@ async fn main() -> io::Result<()> {
         };
         let password = password.clone();
         tokio::spawn(async move {
-            process_conn(local, remote, password).await;
+            process_conn(local, remote, peer_addr, password).await;
         });
     }
 }
