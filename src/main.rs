@@ -14,33 +14,52 @@ enum TaskType {
     ReadTask,
 }
 
+struct Client {
+    addr: SocketAddr,
+    pos: usize,
+}
+
+impl std::fmt::Debug for Client {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.addr)
+    }
+}
+
 mod copy;
 
-async fn process_conn(local: TcpStream, remote: TcpStream, addr: SocketAddr, password: Option<Arc<String>>) {
+async fn process_conn(local: TcpStream, remote: TcpStream, mut client: Client, password: Option<Arc<String>>) {
     let (mut local_reader, mut local_writer) = local.into_split();
     let (mut remote_reader, mut remote_writer) = remote.into_split();
 
     let mut tasks_map: HashMap<TaskType, JoinHandle<_>> = HashMap::new();
 
+    let addr = client.addr;
+
     let login_mode = password.is_some();
 
-    let write_task = tokio::spawn(async move {
-        if !login_mode {
-            copy::copy(&mut local_reader, &mut remote_writer, addr, None).await
-        } else {
+    if login_mode {
+        let write_task = tokio::spawn(async move {
             tokio::io::copy(&mut local_reader, &mut remote_writer).await
-        }        
-    });
-    tasks_map.insert(TaskType::WriteTask, write_task);
+        });
+        tasks_map.insert(TaskType::WriteTask, write_task);
 
-    let read_task = tokio::spawn(async move {
-        if login_mode {
-            copy::copy(&mut remote_reader, &mut local_writer, addr, password).await
-        } else {
+        
+        let read_task = tokio::spawn(async move {
+            copy::copy(&mut remote_reader, &mut local_writer, &mut client, password).await
+        });
+        tasks_map.insert(TaskType::ReadTask, read_task);
+    } else {
+        let write_task = tokio::spawn(async move {
+            copy::copy(&mut local_reader, &mut remote_writer, &mut client, None).await
+        });
+        tasks_map.insert(TaskType::WriteTask, write_task);
+    
+        let read_task = tokio::spawn(async move {
             tokio::io::copy(&mut remote_reader, &mut local_writer).await
-        }
-    });
-    tasks_map.insert(TaskType::ReadTask, read_task);
+        });
+        tasks_map.insert(TaskType::ReadTask, read_task);
+
+    }
 
     for (task_type, task) in tasks_map.iter_mut() {
         let result = task.await.unwrap();
@@ -114,7 +133,7 @@ async fn main() -> io::Result<()> {
         };
         let password = password.clone();
         tokio::spawn(async move {
-            process_conn(local, remote, peer_addr, password).await;
+            process_conn(local, remote, Client { addr: peer_addr, pos: 0 }, password).await;
         });
     }
 }

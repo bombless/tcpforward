@@ -1,7 +1,6 @@
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use std::future::Future;
 use std::io;
-use std::net::SocketAddr;
 use kmp::kmp_find;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -18,13 +17,13 @@ macro_rules! ready {
 }
 
 #[derive(Debug)]
-pub(super) struct CopyBuffer {
+pub(super) struct CopyBuffer<'a> {
     read_done: bool,
     pos: usize,
     cap: usize,
     amt: u64,
     buf: Vec<u8>,
-    peer_addr: SocketAddr,
+    client: &'a mut crate::Client,
     password_segment: Option<String>,
 }
 
@@ -66,16 +65,16 @@ fn modify_buffer(buffer: &mut Vec<u8>, length: usize, password_segment: &str) ->
     return new_length as isize - old_length as isize;
 }
 
-fn log(data: &[u8], addr: &SocketAddr) {
-    eprint!("{:?}({}):", addr, data.len());
+fn log(data: &[u8], client: &crate::Client) {
+    eprint!("{:?}({}..{}):", client, client.pos, client.pos + data.len());
     for b in data {
         eprint!("{:02x}", b)
     }
     eprintln!()
 }
 
-impl CopyBuffer {
-    pub(super) fn new(addr: SocketAddr, password: Option<&str>) -> Self {
+impl<'a> CopyBuffer<'a> {
+    pub(super) fn new(client: &'a mut crate::Client, password: Option<&str>) -> Self {
         Self {
             read_done: false,
             pos: 0,
@@ -83,7 +82,7 @@ impl CopyBuffer {
             amt: 0,
             // buf: vec![0; 65536].into_boxed_slice(),
             buf: vec![0; 65536],
-            peer_addr: addr,
+            client,
             password_segment: password.map(|x| format!("s='admin',r='{}'", x)),
         }
     }
@@ -113,8 +112,9 @@ impl CopyBuffer {
                     if let Some(password_segment) = &self.password_segment {
                         self.cap = (modify_buffer(&mut self.buf, n, password_segment) + n as isize) as usize;
                     } else {
-                        log(&self.buf[..n], &self.peer_addr)
+                        log(&self.buf[..n], &self.client)
                     }
+                    self.client.pos += n
                 }
             }
 
@@ -152,9 +152,9 @@ impl CopyBuffer {
 struct Copy<'a, R: ?Sized, W: ?Sized> {
     reader: &'a mut R,
     writer: &'a mut W,
-    buf: CopyBuffer,
+    buf: CopyBuffer<'a>,
 }
-pub async fn copy<'a, R, W>(reader: &'a mut R, writer: &'a mut W, addr: SocketAddr, password: Option<Arc<String>>) -> io::Result<u64>
+pub(super) async fn copy<'a, R, W>(reader: &'a mut R, writer: &'a mut W, client: &mut crate::Client, password: Option<Arc<String>>) -> io::Result<u64>
 where
     R: AsyncRead + Unpin + ?Sized,
     W: AsyncWrite + Unpin + ?Sized,
@@ -162,7 +162,7 @@ where
     Copy {
         reader,
         writer,
-        buf: CopyBuffer::new(addr, match password { Some(ref x) => Some(&x), None => None }),
+        buf: CopyBuffer::new(client, match password { Some(ref x) => Some(&x), None => None }),
     }.await
 }
 
