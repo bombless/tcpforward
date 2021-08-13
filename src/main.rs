@@ -16,13 +16,14 @@ enum TaskType {
 
 struct Client {
     addr: SocketAddr,
+    local_port: u16,
     pos: usize,
     blocking: bool,
 }
 
 impl std::fmt::Debug for Client {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}{}", self.addr, if self.blocking { "(blocking)" } else { "" })
+        write!(f, "{} as port :{} {}", self.addr, self.local_port, if self.blocking { "(blocking)" } else { "" })
     }
 }
 
@@ -134,7 +135,8 @@ async fn main() -> io::Result<()> {
         };
         let password = password.clone();
         tokio::spawn(async move {
-            process_conn(local, remote, Client { addr: peer_addr, pos: 0, blocking: false }, password).await;
+            let local_port = remote.local_addr().unwrap().port();
+            process_conn(local, remote, Client { addr: peer_addr, pos: 0, blocking: false, local_port }, password).await;
         });
     }
 }
