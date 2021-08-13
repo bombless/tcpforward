@@ -66,7 +66,8 @@ fn modify_buffer(buffer: &mut Vec<u8>, length: usize, password_segment: &str) ->
 }
 
 fn log(data: &[u8], client: &crate::Client) {
-    eprint!("{:?}({}..{}):", client, client.pos, client.pos + data.len());
+    let date = chrono::Local::now();
+    eprint!("[{}][{:?}]{}..{}:", date.format("%m-%d %H:%M"), client, client.pos, client.pos + data.len());
     for b in data {
         eprint!("{:02x}", b)
     }
