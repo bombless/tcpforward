@@ -67,9 +67,10 @@ async fn process_conn(local: TcpStream, remote: TcpStream, mut client: Client, p
         let result = task.await.unwrap();
         match result {
             Ok(n) => {
+                let date = chrono::Local::now();
                 match task_type {
-                    TaskType::WriteTask => println!("write {:?} bytes to remote {:?}!", n, addr),
-                    TaskType::ReadTask => println!("read {:?} bytes from remote {:?}!", n, addr),
+                    TaskType::WriteTask => println!("[{}] write {:?} bytes to remote {:?}!", date.format("%m-%d %H:%M"), n, addr),
+                    TaskType::ReadTask => println!("[{}] read {:?} bytes from remote {:?}!", date.format("%m-%d %H:%M"), n, addr),
                 }
             }
             Err(e) => {
@@ -113,7 +114,8 @@ struct Options {
 async fn main() -> io::Result<()> {
     let mut options: Options = Options::from_args();
     let password = std::mem::replace(&mut options.password, None).map(Arc::new);
-    println!("service is starting ...");
+    let date = chrono::Local::now();
+    println!("[{}] service is starting ...", date.format("%m-%d %H:%M"));
 
     let listener = TcpListener::bind(
         format!("{}:{}", options.local_ip, options.local_port)
@@ -122,7 +124,8 @@ async fn main() -> io::Result<()> {
 
     loop {
         let (local, peer_addr) = listener.accept().await?;
-        println!("a new connection {:?} is coming!", peer_addr);
+        let date = chrono::Local::now();
+        println!("[{}] a new connection {:?} is coming!", date.format("%m-%d %H:%M"), peer_addr);
 
         let remote = match TcpStream::connect(
             format!("{}:{}", options.remote_ip, options.remote_port)
