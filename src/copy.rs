@@ -60,7 +60,7 @@ fn modify_buffer(buffer: &mut Vec<u8>, length: usize, password_segment: &str) ->
 
     if new_length != old_length {
         replace(b"CONTENT-LENGTH: 6236", format!("CONTENT-LENGTH: {}", 6236 + new_length - old_length).as_bytes(), buffer, length + new_length - old_length);
-        println!("come on {} {}", std::str::from_utf8(&old_buffer).unwrap(), std::str::from_utf8(buffer).unwrap());
+        // println!("come on {} {}", std::str::from_utf8(&old_buffer).unwrap(), std::str::from_utf8(buffer).unwrap());
     }
 
     return new_length as isize - old_length as isize;
@@ -130,6 +130,9 @@ impl<'a> CopyBuffer<'a> {
                 let mut buf = ReadBuf::new(&mut me.buf);
                 ready!(reader.as_mut().poll_read(cx, &mut buf))?;
                 let n = buf.filled().len();
+                //if kmp_find(b"Ext.define(\"data.Constants\"", &self.buf).is_some() {
+                //    println!("{}", std::str::from_utf8(&self.buf).unwrap())
+                //}
                 if n == 0 {
                     self.read_done = true;
                 } else {
@@ -137,12 +140,23 @@ impl<'a> CopyBuffer<'a> {
                     if let Some(password_segment) = &self.password_segment {
                         self.cap = (modify_buffer(&mut self.buf, n, password_segment) + n as isize) as usize;
                     } else {
+                        if self.client.pos == 0 {
+                            if [b"GET ", b"POST"].iter().any(|x| x == &&self.buf[0..4]) {
+                                for &c in &self.buf {
+                                    if c == b'\r' {
+                                        break
+                                    }
+                                    print!("{}", c as char)
+                                }
+                                println!()
+                            }
+                        }
                         if self.client.blocking == Some(false) && self.client.pos == 0 && self.buf[0] != 0x23 && self.buf[0] != 0x7e {
                             self.client.blocking = Some(true)
-                        } else if self.client.blocking == Some(true) {
+                        } else if self.client.blocking != Some(true) {
                             self.cap = n;
                         }
-                        log(&self.buf[..n], &self.client)
+                        // log(&self.buf[..n], &self.client)
                     }
                     self.client.pos += n
                 }

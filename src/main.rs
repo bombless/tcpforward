@@ -14,6 +14,7 @@ enum TaskType {
     ReadTask,
 }
 
+#[derive(Clone)]
 struct Client {
     addr: SocketAddr,
     local_port: u16,
@@ -40,8 +41,10 @@ async fn process_conn(local: TcpStream, remote: TcpStream, mut client: Client, p
     let login_mode = password.is_some();
 
     if login_mode {
+        let mut client_writer = client.clone();
+        client_writer.blocking = None;
         let write_task = tokio::spawn(async move {
-            tokio::io::copy(&mut local_reader, &mut remote_writer).await
+            copy::copy(&mut local_reader, &mut remote_writer, &mut client_writer, None).await
         });
         tasks_map.insert(TaskType::WriteTask, write_task);
 
