@@ -18,12 +18,12 @@ struct Client {
     addr: SocketAddr,
     local_port: u16,
     pos: usize,
-    blocking: bool,
+    blocking: Option<bool>,
 }
 
 impl std::fmt::Debug for Client {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} as port :{} {}", self.addr, self.local_port, if self.blocking { "(blocking)" } else { "" })
+        write!(f, "{} as port :{} {}", self.addr, self.local_port, if self.blocking == Some(true) { "(blocking)" } else { "" })
     }
 }
 
@@ -108,6 +108,10 @@ struct Options {
     /// password
     #[structopt(long)]
     password: Option<String>,
+
+    /// blocking mode
+    #[structopt(long)]
+    blocking_mode: bool,
 }
 
 #[tokio::main]
@@ -137,9 +141,10 @@ async fn main() -> io::Result<()> {
             }
         };
         let password = password.clone();
+        let blocking_mode = if options.blocking_mode { Some(false) } else { None };
         tokio::spawn(async move {
             let local_port = remote.local_addr().unwrap().port();
-            process_conn(local, remote, Client { addr: peer_addr, pos: 0, blocking: false, local_port }, password).await;
+            process_conn(local, remote, Client { addr: peer_addr, pos: 0, blocking: blocking_mode, local_port }, password).await;
         });
     }
 }

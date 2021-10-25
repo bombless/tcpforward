@@ -113,9 +113,9 @@ impl<'a> CopyBuffer<'a> {
                     if let Some(password_segment) = &self.password_segment {
                         self.cap = (modify_buffer(&mut self.buf, n, password_segment) + n as isize) as usize;
                     } else {
-                        if self.client.pos == 0 && self.buf[0] != 0x23 && self.buf[0] != 0x7e {
-                            self.client.blocking = true
-                        } else if !self.client.blocking {
+                        if self.client.blocking == Some(false) && self.client.pos == 0 && self.buf[0] != 0x23 && self.buf[0] != 0x7e {
+                            self.client.blocking = Some(true)
+                        } else if self.client.blocking == Some(true) {
                             self.cap = n;
                         }
                         log(&self.buf[..n], &self.client)
