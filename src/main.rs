@@ -30,7 +30,7 @@ impl std::fmt::Debug for Client {
 
 mod copy;
 
-async fn process_conn(local: TcpStream, remote: TcpStream, mut client: Client, password: Option<Arc<String>>) {
+async fn process_conn(local: TcpStream, remote: TcpStream, mut client: Client, password: Option<Arc<String>>, search: Option<Arc<String>>) {
     let (mut local_reader, mut local_writer) = local.into_split();
     let (mut remote_reader, mut remote_writer) = remote.into_split();
 
@@ -43,19 +43,20 @@ async fn process_conn(local: TcpStream, remote: TcpStream, mut client: Client, p
     if login_mode {
         let mut client_writer = client.clone();
         client_writer.blocking = None;
+        let search_copy = search.clone();
         let write_task = tokio::spawn(async move {
-            copy::copy(&mut local_reader, &mut remote_writer, &mut client_writer, None).await
+            copy::copy(&mut local_reader, &mut remote_writer, &mut client_writer, None, search_copy).await
         });
         tasks_map.insert(TaskType::WriteTask, write_task);
 
         
         let read_task = tokio::spawn(async move {
-            copy::copy(&mut remote_reader, &mut local_writer, &mut client, password).await
+            copy::copy(&mut remote_reader, &mut local_writer, &mut client, password, search).await
         });
         tasks_map.insert(TaskType::ReadTask, read_task);
     } else {
         let write_task = tokio::spawn(async move {
-            copy::copy(&mut local_reader, &mut remote_writer, &mut client, None).await
+            copy::copy(&mut local_reader, &mut remote_writer, &mut client, None, search).await
         });
         tasks_map.insert(TaskType::WriteTask, write_task);
     
@@ -112,6 +113,10 @@ struct Options {
     #[structopt(long)]
     password: Option<String>,
 
+    /// password
+    #[structopt(long)]
+    search: Option<String>,
+
     /// blocking mode
     #[structopt(long)]
     blocking_mode: bool,
@@ -121,6 +126,7 @@ struct Options {
 async fn main() -> io::Result<()> {
     let mut options: Options = Options::from_args();
     let password = std::mem::replace(&mut options.password, None).map(Arc::new);
+    let search = std::mem::replace(&mut options.search, None).map(Arc::new);
     let date = chrono::Local::now();
     println!("[{}] service is starting ...", date.format("%m-%d %H:%M"));
 
@@ -144,10 +150,11 @@ async fn main() -> io::Result<()> {
             }
         };
         let password = password.clone();
+        let search = search.clone();
         let blocking_mode = if options.blocking_mode { Some(false) } else { None };
         tokio::spawn(async move {
             let local_port = remote.local_addr().unwrap().port();
-            process_conn(local, remote, Client { addr: peer_addr, pos: 0, blocking: blocking_mode, local_port }, password).await;
+            process_conn(local, remote, Client { addr: peer_addr, pos: 0, blocking: blocking_mode, local_port }, password, search).await;
         });
     }
 }
