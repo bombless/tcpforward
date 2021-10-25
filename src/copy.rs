@@ -25,6 +25,7 @@ pub(super) struct CopyBuffer<'a> {
     buf: Vec<u8>,
     client: &'a mut crate::Client,
     password_segment: Option<String>,
+    replacement: Vec<(std::path::PathBuf, Vec<u8>, Vec<u8>)>,
 }
 
 
@@ -76,6 +77,28 @@ fn log(data: &[u8], client: &crate::Client) {
 
 impl<'a> CopyBuffer<'a> {
     pub(super) fn new(client: &'a mut crate::Client, password: Option<&str>) -> Self {
+        use std::fs::{read_dir, File};
+        use std::path::Path;
+        use std::io::prelude::*;
+        let mut replacement = Vec::new();
+        for dir in read_dir("replacement").into_iter().flatten().flatten() {
+            let path = dir.path();
+            let from_path = Path::new("replacement").join(&path).join("from.txt");
+            let mut from = match File::open(from_path) {
+                Ok(x) => x,
+                _ => continue,
+            };
+            let to_path = Path::new("replacement").join(&path).join("to.txt");
+            let mut to = match File::open(to_path) {
+                Ok(x) => x,
+                _ => continue,
+            };
+            let mut from_buffer = Vec::new();
+            from.read_to_end(&mut from_buffer).unwrap();
+            let mut to_buffer = Vec::new();
+            to.read_to_end(&mut to_buffer).unwrap();
+            replacement.push((path, from_buffer, to_buffer));
+        }
         Self {
             read_done: false,
             pos: 0,
@@ -85,6 +108,7 @@ impl<'a> CopyBuffer<'a> {
             buf: vec![0; 65536],
             client,
             password_segment: password.map(|x| format!("s='admin',r='{}'", x)),
+            replacement,
         }
     }
 
