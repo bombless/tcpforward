@@ -144,7 +144,7 @@ impl<'a> CopyBuffer<'a> {
                 //    }
                 //}
                 if !self.client.search.iter().any(|x| kmp_find(x.as_bytes(), &self.buf).is_none()) {
-                    println!("{}", std::str::from_utf8(&self.buf).unwrap())
+                    println!("{}", std::str::from_utf8(&self.buf[0..n]).unwrap())
                 }
                 if n == 0 {
                     self.read_done = true;
