@@ -143,7 +143,12 @@ impl<'a> CopyBuffer<'a> {
                 //        println!("{}", std::str::from_utf8(&self.buf).unwrap())
                 //    }
                 //}
-                if !self.client.search.iter().any(|x| kmp_find(x.as_bytes(), &self.buf).is_none()) {
+                let bingo = if self.client.pattern_or {
+                    self.client.search.iter().any(|x| kmp_find(x.as_bytes(), &self.buf).is_some())
+                } else {
+                    !self.client.search.iter().any(|x| kmp_find(x.as_bytes(), &self.buf).is_none())
+                };
+                if bingo {
                     println!("{}", std::str::from_utf8(&self.buf[0..n]).unwrap())
                 }
                 if n == 0 {

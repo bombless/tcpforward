@@ -21,6 +21,7 @@ struct Client {
     pos: usize,
     blocking: Option<bool>,
     search: Arc<Vec<String>>,
+    pattern_or: bool,
 }
 
 impl std::fmt::Debug for Client {
@@ -120,14 +121,19 @@ struct Options {
     /// blocking mode
     #[structopt(long)]
     blocking_mode: bool,
+
+    /// pattern or
+    #[structopt(long)]
+    pattern_or: bool,
 }
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
     let mut options: Options = Options::from_args();
     let password = std::mem::replace(&mut options.password, None).map(Arc::new);
-    println!("search {:?}", options.search);
+    println!("search pattern {} {:?}", if options.pattern_or { "or" } else { "and" }, options.search);
     let search = Arc::new(options.search.clone());
+    let pattern_or = options.pattern_or;
     let date = chrono::Local::now();
     println!("[{}] service is starting ...", date.format("%m-%d %H:%M"));
 
@@ -155,7 +161,7 @@ async fn main() -> io::Result<()> {
         let blocking_mode = if options.blocking_mode { Some(false) } else { None };
         tokio::spawn(async move {
             let local_port = remote.local_addr().unwrap().port();
-            process_conn(local, remote, Client { addr: peer_addr, pos: 0, blocking: blocking_mode, local_port, search }, password).await;
+            process_conn(local, remote, Client { addr: peer_addr, pos: 0, blocking: blocking_mode, local_port, search, pattern_or }, password).await;
         });
     }
 }
