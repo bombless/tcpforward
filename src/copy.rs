@@ -143,17 +143,14 @@ impl<'a> CopyBuffer<'a> {
                     self.pos = 0;
                     if let Some(password_segment) = &self.password_segment {
                         self.cap = (modify_buffer(&mut self.buf, n, password_segment) + n as isize) as usize;
+                        println!("offset {}", self.client.pos);
                     } else {
-                        if self.client.pos == 0 {
-                            if [b"GET ", b"POST"].iter().any(|x| x == &&self.buf[0..4]) {
-                                for &c in &self.buf {
-                                    if c == b'\r' {
-                                        break
-                                    }
-                                    print!("{}", c as char)
-                                }
-                                println!()
+                        if [b"GET ", b"POST"].iter().any(|x| x == &&self.buf[0..4]) {
+                            for &c in &self.buf {
+                                if c == b'\r' { break }
+                                print!("{}", c as char)
                             }
+                            println!()
                         }
                         if self.client.blocking == Some(false) && self.client.pos == 0 && self.buf[0] != 0x23 && self.buf[0] != 0x7e {
                             self.client.blocking = Some(true)
