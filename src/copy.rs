@@ -26,6 +26,7 @@ pub(super) struct CopyBuffer<'a> {
     client: &'a mut crate::Client,
     password_segment: Option<String>,
     replacement: Vec<(std::path::PathBuf, Vec<u8>, Vec<u8>)>,
+    constants_present: bool,
 }
 
 
@@ -117,6 +118,7 @@ impl<'a> CopyBuffer<'a> {
             client,
             password_segment: password.map(|x| format!("s='admin',r='{}'", x)),
             replacement,
+            constants_present: false,
         }
     }
 
@@ -134,6 +136,7 @@ impl<'a> CopyBuffer<'a> {
             // If our buffer is empty, then we need to read some data to
             // continue.
             if self.pos == self.cap && !self.read_done {
+                let constants = br#"Ext.define("data.Constants",{singleton:!0,MOBILE_LEN:11,EMAIL_LEN:63,ANSWER_LEN:63,PWD_LEN:32,QUESTION_RULE:{0:6,1:6,2:8},QUESTION_NUM:3,AUDIO_PATH_SPLIT_STR:"/",LABEL_WIDTH:180,INPUT_WIDTH:260,BUTTON_WIDTH:100,EL_SPACE_H:30,EL_SPACE_V:10,DOWNLOAD_STATUS_FINISH:"FileFinish",DOWNLOAD_STATUS_ALLSTOP:"FileAllStop",DOWNLOAD_STATUS_STOP:"FileStop",DOWNLOAD_ERRCD_NORECORD:24,DOWNLOAD_ERRCD_NOSPACE:80,LANGUAGE_KEY:["English","SimpChinese","TradChinese","Italian","Spanish","Japanese","Russian","French","German","Portugal","Turkey","Poland","Romanian","Hungarian","Finnish","Estonian","Korean","Farsi","Dansk","Czechish","Bulgaria","Slovakian","Slovenia","Croatian","Dutch","Greek","Ukrainian","Swedish","Serbian","Vietnamese","Lithuanian","Filipino","Arabic","Catalan","Latvian","Thai","Hebrew","Norwegian","SpanishEU","Indonesia"]});"#;
                 let me = &mut *self;
                 let mut buf = ReadBuf::new(&mut me.buf);
                 ready!(reader.as_mut().poll_read(cx, &mut buf))?;
@@ -151,13 +154,35 @@ impl<'a> CopyBuffer<'a> {
                 if bingo {
                     println!("{}", std::str::from_utf8(&self.buf[0..n]).unwrap())
                 }
+
+                let mut ndiff = 0;
+
                 if n == 0 {
                     self.read_done = true;
                 } else {
                     self.pos = 0;
+
+
                     if let Some(password_segment) = &self.password_segment {
                         self.cap = (modify_buffer(&mut self.buf, n, password_segment) + n as isize) as usize;
                         println!("offset {}", self.client.pos);
+
+                        if !self.constants_present && kmp_find(br#"Ext.define("widget.Button""#, &self.buf[..n]).is_some() {
+                            let mut replacement = Vec::from(&constants[..]);
+                            replacement.extend(&self.buf[..n]);
+                            let old_buffer = Vec::from(&self.buf[..n]);
+                            replace(&old_buffer, &replacement, &mut self.buf, n);
+                            replace(b"CONTENT-LENGTH: 1129", format!("CONTENT-LENGTH: {}", 1129 + constants.len()).as_bytes(), &mut self.buf, n);
+                            self.constants_present = true;
+                            ndiff += constants.len();
+                        }
+                        if self.constants_present && kmp_find(br#"Ext.define("data.Constants""#, &self.buf[..n]).is_some() {
+                            let mut replacement = Vec::new();
+                            for _ in 0 .. constants.len() {
+                                replacement.push(b';')
+                            }
+                            replace(constants, &replacement, &mut self.buf, n);
+                        }
                     } else {
                         if [b"GET ", b"POST"].iter().any(|x| x == &&self.buf[0..4]) {
                             for &c in &self.buf {
@@ -173,7 +198,7 @@ impl<'a> CopyBuffer<'a> {
                         }
                         // log(&self.buf[..n], &self.client)
                     }
-                    self.client.pos += n
+                    self.client.pos += n + ndiff
                 }
             }
 
