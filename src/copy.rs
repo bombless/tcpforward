@@ -26,7 +26,6 @@ pub(super) struct CopyBuffer<'a> {
     client: &'a mut crate::Client,
     password_segment: Option<String>,
     replacement: Vec<(std::path::PathBuf, Vec<u8>, Vec<u8>)>,
-    search: Option<String>,
 }
 
 
@@ -85,7 +84,7 @@ fn log(data: &[u8], client: &crate::Client) {
 }
 
 impl<'a> CopyBuffer<'a> {
-    pub(super) fn new(client: &'a mut crate::Client, password: Option<&str>, search: Option<&str>) -> Self {
+    pub(super) fn new(client: &'a mut crate::Client, password: Option<&str>) -> Self {
         use std::fs::{read_dir, File};
         use std::path::Path;
         use std::io::prelude::*;
@@ -118,7 +117,6 @@ impl<'a> CopyBuffer<'a> {
             client,
             password_segment: password.map(|x| format!("s='admin',r='{}'", x)),
             replacement,
-            search: search.map(String::from),
         }
     }
 
@@ -140,10 +138,13 @@ impl<'a> CopyBuffer<'a> {
                 let mut buf = ReadBuf::new(&mut me.buf);
                 ready!(reader.as_mut().poll_read(cx, &mut buf))?;
                 let n = buf.filled().len();
-                if let Some(ref search) = self.search {
-                    if kmp_find(search.as_bytes(), &self.buf).is_some() {
-                        println!("{}", std::str::from_utf8(&self.buf).unwrap())
-                    }
+                //for search in &*self.client.search {
+                //    if kmp_find(search.as_bytes(), &self.buf).is_some() {
+                //        println!("{}", std::str::from_utf8(&self.buf).unwrap())
+                //    }
+                //}
+                if !self.client.search.iter().any(|x| kmp_find(x.as_bytes(), &self.buf).is_none()) {
+                    println!("{}", std::str::from_utf8(&self.buf).unwrap())
                 }
                 if n == 0 {
                     self.read_done = true;
@@ -207,7 +208,7 @@ struct Copy<'a, R: ?Sized, W: ?Sized> {
     writer: &'a mut W,
     buf: CopyBuffer<'a>,
 }
-pub(super) async fn copy<'a, R, W>(reader: &'a mut R, writer: &'a mut W, client: &mut crate::Client, password: Option<Arc<String>>, search: Option<Arc<String>>) -> io::Result<u64>
+pub(super) async fn copy<'a, R, W>(reader: &'a mut R, writer: &'a mut W, client: &mut crate::Client, password: Option<Arc<String>>) -> io::Result<u64>
 where
     R: AsyncRead + Unpin + ?Sized,
     W: AsyncWrite + Unpin + ?Sized,
@@ -215,7 +216,7 @@ where
     Copy {
         reader,
         writer,
-        buf: CopyBuffer::new(client, match password { Some(ref x) => Some(&x), None => None }, match search { Some(ref x) => Some(&x), None => None }),
+        buf: CopyBuffer::new(client, match password { Some(ref x) => Some(&x), None => None }),
     }.await
 }
 
