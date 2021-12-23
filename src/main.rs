@@ -22,6 +22,7 @@ struct Client {
     blocking: Option<bool>,
     search: Arc<Vec<String>>,
     pattern_or: bool,
+    remove_options: bool,
 }
 
 impl std::fmt::Debug for Client {
@@ -31,6 +32,7 @@ impl std::fmt::Debug for Client {
 }
 
 mod copy;
+mod remove_options;
 
 async fn process_conn(local: TcpStream, remote: TcpStream, mut client: Client, password: Option<Arc<String>>) {
     let (mut local_reader, mut local_writer) = local.into_split();
@@ -40,9 +42,23 @@ async fn process_conn(local: TcpStream, remote: TcpStream, mut client: Client, p
 
     let addr = client.addr;
 
+    let remove_options_mode = client.remove_options;
+
     let login_mode = password.is_some();
 
-    if login_mode {
+    if remove_options_mode {
+        let write_task = tokio::spawn(async move {
+            remove_options::copy(&mut local_reader, &mut remote_writer).await
+        });
+        tasks_map.insert(TaskType::WriteTask, write_task);
+
+        
+        let read_task = tokio::spawn(async move {
+            tokio::io::copy(&mut remote_reader, &mut local_writer).await
+        });
+        tasks_map.insert(TaskType::ReadTask, read_task);
+    }
+    else if login_mode {
         let mut client_writer = client.clone();
         client_writer.blocking = None;
         let write_task = tokio::spawn(async move {
@@ -125,6 +141,10 @@ struct Options {
     /// pattern or
     #[structopt(long)]
     pattern_or: bool,
+
+    /// remove-options-mode
+    #[structopt(long)]
+    remove_options: bool,
 }
 
 #[tokio::main]
@@ -134,6 +154,9 @@ async fn main() -> io::Result<()> {
     println!("search pattern {} {:?}", if options.pattern_or { "or" } else { "and" }, options.search);
     let search = Arc::new(options.search.clone());
     let pattern_or = options.pattern_or;
+
+    let remove_options_mode = options.remove_options;
+
     let date = chrono::Local::now();
     println!("[{}] service is starting ...", date.format("%m-%d %H:%M"));
 
@@ -161,7 +184,7 @@ async fn main() -> io::Result<()> {
         let blocking_mode = if options.blocking_mode { Some(false) } else { None };
         tokio::spawn(async move {
             let local_port = remote.local_addr().unwrap().port();
-            process_conn(local, remote, Client { addr: peer_addr, pos: 0, blocking: blocking_mode, local_port, search, pattern_or }, password).await;
+            process_conn(local, remote, Client { addr: peer_addr, pos: 0, blocking: blocking_mode, local_port, search, pattern_or, remove_options: remove_options_mode }, password).await;
         });
     }
 }
